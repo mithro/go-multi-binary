@@ -48,12 +48,17 @@ def interpreter_for(arch: str):
     """Return the argv prefix to run a binary of `arch`, or None if impossible.
 
     Native arch -> no prefix. Foreign arch -> the qemu interpreter if installed.
+    Accepts both `qemu-<arch>` (Debian qemu-user) and `qemu-<arch>-static`
+    (Debian/Ubuntu qemu-user-static, common in CI).
     """
     if arch == host_arch():
         return []
-    exe = QEMU_INTERP.get(arch)
-    if exe and shutil.which(exe):
-        return [exe]
+    base = QEMU_INTERP.get(arch)
+    if not base:
+        return None
+    for name in (base, base + "-static"):
+        if shutil.which(name):
+            return [name]
     return None
 
 
