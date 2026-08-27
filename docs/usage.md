@@ -72,6 +72,33 @@ go-teleport-self tester@127.0.0.1 -- -p 2222 -i ./key -o StrictHostKeyChecking=a
 The installed binary is native to the remote machine, so it runs there directly —
 and, carrying the same blob, it can teleport onward to yet another architecture.
 
+## Live demo (verified)
+
+A real run under QEMU **system** emulation: an **arm64** host binary teleporting
+onto a full **amd64** Debian guest over SSH (`test/teleport_e2e_test.py`).
+
+```
+$ go-teleport-self tester@127.0.0.1 -- -p <port> -i <key> ...
+teleported to tester@127.0.0.1: installed canonical(amd64), 13898702 bytes,
+  md5:5bbd47705b7bd56fcc19b5c4f41b427b -> ~/local/bin/go-teleport-self
+
+# then, on the amd64 guest:
+$ ~/local/bin/go-teleport-self info
+go-teleport-self v0.0-…
+running arch:   amd64
+embedded arches:
+  386      present   2232446 bytes  …
+  amd64    present   2392190 bytes  …
+  arm      present   2293886 bytes  …
+  arm64    present   2359422 bytes  …
+  riscv64  present   2228350 bytes  …
+  riscv32  reserved (no binary embedded)
+```
+
+The installed file's md5 (`5bbd4770…`) equals the `amd64` entry in the build
+`MANIFEST.json` — the deployed bytes are exactly the official `canonical(amd64)`,
+produced by an arm64 machine, with nothing downloaded (HR3 + HR4).
+
 ## Portability
 
 The shipped binaries are static (`CGO_ENABLED=0`), so they run on **glibc and
