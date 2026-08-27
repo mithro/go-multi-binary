@@ -16,6 +16,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/mithro/go-multi-binary/internal/archdetect"
 	"github.com/mithro/go-multi-binary/internal/fatblob"
+	"github.com/mithro/go-multi-binary/internal/teleport"
 )
 
 // version is overridden at build time via -ldflags "-X main.version=...".
@@ -194,10 +196,36 @@ func cmdExtract(arch, out string) error {
 }
 
 // cmdTeleport installs this binary onto a remote host of possibly-different
-// architecture. Fully implemented in the teleport step; this build wires the
-// dispatch and delegates to the teleport package there.
+// architecture, reconstructing the exact canonical artifact for the remote's
+// arch from this binary's own embedded FATBLOB and copying it over SSH.
+//
+//	go-teleport-self user@host [-- <extra ssh args>]
+//
+// Destination defaults to ~/local/bin.
 func cmdTeleport(args []string) error {
-	return fmt.Errorf("teleport to %q is not available in this build", args[0])
+	target := args[0]
+	var sshArgs []string
+	for i := 1; i < len(args); i++ {
+		if args[i] == "--" {
+			sshArgs = append(sshArgs, args[i+1:]...)
+			break
+		}
+	}
+	self, err := fatblob.ReadSelf()
+	if err != nil {
+		return err
+	}
+	if _, _, err := fatblob.SplitCanonical(self); err != nil {
+		return fmt.Errorf("this binary has no embedded FATBLOB to teleport: %w", err)
+	}
+	tr := teleport.SSHTransport{Target: target, SSHArgs: sshArgs}
+	res, err := teleport.Deploy(context.Background(), self, tr, "~/local/bin")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("teleported to %s: installed canonical(%s), %d bytes, md5:%s -> %s\n",
+		target, res.Arch, res.Size, res.MD5, res.RemotePath)
+	return nil
 }
 
 func usage() {
