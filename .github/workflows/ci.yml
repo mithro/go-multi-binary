@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+# Pin the exact Go toolchain: reproducibility depends on the compiler version
+# (see docs/research/multi-arch-binary-approaches.md §5.4).
+env:
+  GO_VERSION: '1.26.7'
+
+jobs:
+  unit:
+    name: Go unit tests + vet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - run: go vet ./...
+      - run: go test ./... -v
+
+  determinism:
+    name: Reproducible build + determinism law
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0            # git describe needs tags/history
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: astral-sh/setup-uv@v5
+      - name: Build all architectures
+        run: uv run python build.py
+      - name: Byte-identical builds + executed reconstruct law
+        run: uv run --with pytest python -m pytest test/determinism_test.py -v
+      - name: Upload artifacts + manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            dist/go-teleport-self.*
+            dist/MANIFEST.json
+
+  qemu-user:
+    name: Cross-arch execution (QEMU user-mode)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: astral-sh/setup-uv@v5
+      - name: Install QEMU user-mode emulators + binfmt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static binfmt-support
+      - name: Run each arch under emulation + reconstruct law
+        run: uv run --with pytest python -m pytest test/exec_qemu_user_test.py -v
+
+  e2e-system:
+    name: End-to-end SSH teleport (QEMU system, best-effort)
+    runs-on: ubuntu-latest
+    # System emulation under TCG is slow; don't block PRs on it.
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: astral-sh/setup-uv@v5
+      - name: Install QEMU system + cloud tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-arm qemu-system-misc cloud-image-utils qemu-utils qemu-efi-aarch64
+      - name: Fetch a foreign-arch guest image (arm64 on amd64 runner)
+        run: |
+          mkdir -p emulation/system/images
+          curl -fsSL -o emulation/system/images/debian-12-arm64.qcow2 \
+            https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-arm64.qcow2
+      - name: Teleport onto a foreign guest over SSH
+        env:
+          TELEPORT_E2E_ARCH: arm64     # arm64 guest is foreign on an amd64 runner
+        run: uv run --with pytest python -m pytest test/teleport_e2e_test.py -v -s
