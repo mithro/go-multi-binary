@@ -1,0 +1,24 @@
+# Build outputs
+/dist/
+/build/
+/bin/
+*.fat
+*.canonical
+
+# Local scratch / proof-of-concept (never committed)
+/tmp/
+
+# QEMU disk images and rootfs (large, regenerable)
+/emulation/images/
+*.qcow2
+*.img
+*.rootfs
+
+# Go
+*.test
+*.out
+/vendor/
+
+# Editor
+*.swp
+.DS_Store
