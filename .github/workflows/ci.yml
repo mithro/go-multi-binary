@@ -90,5 +90,6 @@ jobs:
             https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-arm64.qcow2
       - name: Teleport onto a foreign guest over SSH
         env:
-          TELEPORT_E2E_ARCH: arm64     # arm64 guest is foreign on an amd64 runner
+          TELEPORT_E2E_ARCH: arm64          # arm64 guest is foreign on an amd64 runner
+          TELEPORT_E2E_BOOT_TIMEOUT: '1800' # arm64 under TCG boots slowly; fail-fast on qemu crash
         run: uv run --with pytest python -m pytest test/teleport_e2e_test.py -v -s
