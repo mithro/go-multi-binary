@@ -37,9 +37,29 @@ for why the rejected ones cannot meet the hard requirements.
 4. Bit-for-bit deterministic: `md5(go-binary.riscv64 downloaded)` ==
    `md5(what go-binary.arm64 produces when deploying to a riscv64 machine)`.
 
+## Quickstart
+
+```bash
+make build                       # reproducible dist/go-teleport-self.<arch> for all 5 arches
+./dist/go-teleport-self.arm64 info
+go-teleport-self user@host       # install self onto a different-arch machine over SSH
+```
+
+## Documentation
+
+- [docs/architecture.md](docs/architecture.md) — how the fat binary + reconstruct law work
+- [docs/usage.md](docs/usage.md) — build, inspect, extract, teleport
+- [docs/testing.md](docs/testing.md) — the layered test suite (unit → emulation → e2e)
+- [docs/contributing.md](docs/contributing.md) — reproducibility rules, adding an arch
+- [docs/research/multi-arch-binary-approaches.md](docs/research/multi-arch-binary-approaches.md) — approaches considered, with references
+- [emulation/system/README.md](emulation/system/README.md) — QEMU system-emulation harness
+
 ## Status
 
-Early development. Research/design phase complete; implementation in progress.
+Core implemented and tested: reproducible builds for all 5 Go-supported arches,
+the container format + reconstruct law (proven in Go, under QEMU user-mode, and
+via reproducible-build identity), the `go-teleport-self` CLI + SSH teleport, and
+QEMU user/system emulation harnesses with CI. riscv32 is a reserved slot.
 
 ## License
 
