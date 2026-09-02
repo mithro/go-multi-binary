@@ -37,7 +37,6 @@ ARCH_CONFIG = {
         "qemu": "qemu-system-x86_64",
         "image": "debian-12-amd64.qcow2",
         "machine": ["-machine", "q35", "-cpu", "max"],
-        "accel": "tcg",  # no KVM for x86 on an arm64 host
         "net": "virtio-net-pci",
         "drive_if": "virtio",
     },
@@ -45,7 +44,6 @@ ARCH_CONFIG = {
         "qemu": "qemu-system-aarch64",
         "image": "debian-12-arm64.qcow2",
         "machine": ["-machine", "virt", "-cpu", "max"],
-        "accel": "kvm" if os.path.exists("/dev/kvm") else "tcg",
         "net": "virtio-net-pci",
         "drive_if": "virtio",
         "uefi": True,
@@ -54,12 +52,57 @@ ARCH_CONFIG = {
         "qemu": "qemu-system-riscv64",
         "image": "debian-13-riscv64.qcow2",
         "machine": ["-machine", "virt", "-cpu", "max"],
-        "accel": "tcg",
         "net": "virtio-net-device",
         "drive_if": "virtio",
         "bios": "default",
     },
 }
+
+
+# Candidate locations for aarch64 UEFI firmware across distros (Debian, Ubuntu,
+# Fedora). The exact path varies by distro/package, so we search rather than
+# hardcode one (the hardcoded path was why the CI arm64 job failed at startup).
+AARCH64_FIRMWARE_CANDIDATES = [
+    "/usr/share/qemu-efi-aarch64/QEMU_EFI.fd",
+    "/usr/share/AAVMF/AAVMF_CODE.fd",
+    "/usr/share/AAVMF/AAVMF_CODE.no-secboot.fd",
+    "/usr/share/edk2/aarch64/QEMU_EFI.fd",
+    "/usr/share/edk2/aarch64/QEMU_EFI-silent.fd",
+    "/usr/share/qemu/edk2-aarch64-code.fd",
+]
+
+
+def find_uefi_firmware() -> str | None:
+    for p in AARCH64_FIRMWARE_CANDIDATES:
+        if os.path.exists(p):
+            return p
+    return None
+
+
+_HOST_MAP = {
+    "x86_64": "amd64", "amd64": "amd64",
+    "i686": "386", "i386": "386",
+    "armv7l": "arm", "armv6l": "arm",
+    "aarch64": "arm64", "arm64": "arm64",
+    "riscv64": "riscv64",
+}
+
+
+def host_arch() -> str:
+    import platform
+
+    return _HOST_MAP.get(platform.machine().lower(), platform.machine().lower())
+
+
+def select_accel(arch: str) -> str:
+    """Use KVM only when the guest arch matches the host arch AND /dev/kvm is
+    actually usable. KVM cannot virtualize a foreign architecture (an aarch64
+    guest on an x86 host must use TCG), and /dev/kvm can exist but be
+    permission-denied — both were causes of QEMU failing to start.
+    """
+    if arch == host_arch() and os.access("/dev/kvm", os.R_OK | os.W_OK):
+        return "kvm"
+    return "tcg"
 
 
 def available(arch: str) -> tuple[bool, str]:
@@ -72,6 +115,8 @@ def available(arch: str) -> tuple[bool, str]:
         return False, "cloud-localds (cloud-image-utils) not installed"
     if not (IMAGES / cfg["image"]).exists():
         return False, f"base image {cfg['image']} not present in {IMAGES}"
+    if cfg.get("uefi") and find_uefi_firmware() is None:
+        return False, "aarch64 UEFI firmware not found (install qemu-efi-aarch64)"
     return True, ""
 
 
@@ -83,9 +128,11 @@ def _free_port() -> int:
     return port
 
 
-def _wait_ssh(port: int, key: Path, timeout: float) -> bool:
+def _wait_ssh(port: int, key: Path, timeout: float, proc=None) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            return False  # qemu died; caller inspects the log
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=3):
                 pass
@@ -148,7 +195,7 @@ def guest(arch: str, workdir: Path, boot_timeout: float = 900.0):
         cfg["qemu"],
         "-m", "1024", "-smp", "2",
         *cfg["machine"],
-        "-accel", cfg["accel"],
+        "-accel", select_accel(arch),
         "-drive", f"file={overlay},if={cfg['drive_if']},format=qcow2",
         "-drive", f"file={seed},if={cfg['drive_if']},format=raw",
         "-netdev", f"user,id=n0,hostfwd=tcp:127.0.0.1:{port}-:22",
@@ -158,12 +205,25 @@ def guest(arch: str, workdir: Path, boot_timeout: float = 900.0):
         "-monitor", "none",
     ]
     if cfg.get("uefi"):
-        cmd += ["-bios", "/usr/share/qemu-efi-aarch64/QEMU_EFI.fd"]
+        fw = find_uefi_firmware()
+        if fw is None:
+            raise RuntimeError("aarch64 UEFI firmware not found (install qemu-efi-aarch64)")
+        cmd += ["-bios", fw]
 
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    # Capture QEMU's own stdout+stderr so startup failures are visible (never
+    # discard to /dev/null — that hid the CI failure and wasted the full timeout).
+    qemu_log = workdir / "qemu.log"
+    qemu_out = open(qemu_log, "wb")
+    proc = subprocess.Popen(cmd, stdout=qemu_out, stderr=subprocess.STDOUT)
     try:
-        if not _wait_ssh(port, key, boot_timeout):
-            tail = console.read_text()[-2000:] if console.exists() else "(no console)"
+        if not _wait_ssh(port, key, boot_timeout, proc):
+            if proc.poll() is not None:
+                log = qemu_log.read_text(errors="replace")[-2000:]
+                raise RuntimeError(
+                    f"guest {arch}: qemu exited early (code {proc.returncode})\n"
+                    f"cmd: {' '.join(cmd)}\nqemu output:\n{log}"
+                )
+            tail = console.read_text()[-2000:] if console.exists() else "(no console output)"
             raise RuntimeError(f"guest {arch} did not become SSH-ready in {boot_timeout}s\n{tail}")
         yield {
             "host": "127.0.0.1",
@@ -183,3 +243,4 @@ def guest(arch: str, workdir: Path, boot_timeout: float = 900.0):
             proc.wait(timeout=15)
         if proc.poll() is None:
             proc.kill()
+        qemu_out.close()
