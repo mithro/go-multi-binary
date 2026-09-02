@@ -128,8 +128,30 @@ def _free_port() -> int:
     return port
 
 
+def _ssh(port: int, key: Path, remote_cmd: str, connect_timeout: int = 10):
+    return subprocess.run(
+        ["ssh", "-p", str(port), "-i", str(key),
+         "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
+         "-o", f"UserKnownHostsFile={key.parent / 'known_hosts'}",
+         "-o", f"ConnectTimeout={connect_timeout}",
+         "tester@127.0.0.1", remote_cmd],
+        capture_output=True, text=True,
+    )
+
+
 def _wait_ssh(port: int, key: Path, timeout: float, proc=None) -> bool:
+    """Return True only when the guest is *stably* ready.
+
+    Two phases: first wait for sshd to answer at all, then block on
+    `cloud-init status --wait` so we don't yield during the window where
+    cloud-init regenerates host keys and restarts sshd (which resets
+    connections — the cause of `kex_exchange_identification: Connection reset`).
+    Transient resets during that window are retried until cloud-init is done.
+    """
     deadline = time.monotonic() + timeout
+
+    # Phase 1: basic reachability.
+    reachable = False
     while time.monotonic() < deadline:
         if proc is not None and proc.poll() is not None:
             return False  # qemu died; caller inspects the log
@@ -139,18 +161,22 @@ def _wait_ssh(port: int, key: Path, timeout: float, proc=None) -> bool:
         except OSError:
             time.sleep(2)
             continue
-        # Port open: try an actual ssh command.
-        r = subprocess.run(
-            ["ssh", "-p", str(port), "-i", str(key),
-             "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
-             "-o", f"UserKnownHostsFile={key.parent / 'known_hosts'}",
-             "-o", "ConnectTimeout=5",
-             "tester@127.0.0.1", "true"],
-            capture_output=True, text=True,
-        )
-        if r.returncode == 0:
-            return True
+        if _ssh(port, key, "true").returncode == 0:
+            reachable = True
+            break
         time.sleep(3)
+    if not reachable:
+        return False
+
+    # Phase 2: wait for cloud-init to finish so sshd stops being restarted.
+    # `cloud-init status --wait` blocks until done and exits 0; a reset mid-call
+    # returns non-zero, so we retry until it succeeds or we run out of time.
+    while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            return False
+        if _ssh(port, key, "cloud-init status --wait", connect_timeout=15).returncode == 0:
+            return True
+        time.sleep(5)
     return False
 
 
