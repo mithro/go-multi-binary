@@ -24,9 +24,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mithro/go-multi-binary/internal/archdetect"
-	"github.com/mithro/go-multi-binary/internal/fatblob"
-	"github.com/mithro/go-multi-binary/internal/teleport"
+	"github.com/mithro/go-multi-binary/archdetect"
+	"github.com/mithro/go-multi-binary/fatblob"
+	"github.com/mithro/go-multi-binary/teleport"
 )
 
 // version is overridden at build time via -ldflags "-X main.version=...".

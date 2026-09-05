@@ -34,7 +34,7 @@ is dropped in. Do **not** mark it supported until a real slice can be produced.
 
 ## Adding an architecture
 
-1. Add an entry to `internal/archdetect.Table()` (id, `GOARCH`/`GOARM`, ELF
+1. Add an entry to `archdetect.Table()` (id, `GOARCH`/`GOARM`, ELF
    `e_machine`, `uname -m` aliases, `Supported: true`) **and** to
    `fatblob.FixedArchOrder()` — the order is part of the canonical format, so
    append; do not reorder existing arches.

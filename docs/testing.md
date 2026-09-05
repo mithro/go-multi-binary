@@ -51,7 +51,7 @@ make e2e             # full SSH teleport under system emulation (needs setup)
 
 It is the core guarantee, so it is verified at three levels of realism:
 
-1. **Synthetic, in-process** (`internal/fatblob`): fast, exhaustive over all
+1. **Synthetic, in-process** (`fatblob`): fast, exhaustive over all
    host→target pairs, proves the algorithm.
 2. **Real binaries, executed under emulation** (`test/exec_qemu_user_test.py`):
    proves the actual compiled tool does it, on every emulated CPU.

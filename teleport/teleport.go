@@ -12,8 +12,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/mithro/go-multi-binary/internal/archdetect"
-	"github.com/mithro/go-multi-binary/internal/fatblob"
+	"github.com/mithro/go-multi-binary/archdetect"
+	"github.com/mithro/go-multi-binary/fatblob"
 )
 
 // Transport abstracts remote command execution and file upload so Deploy can be

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mithro/go-multi-binary/internal/fatblob"
+	"github.com/mithro/go-multi-binary/fatblob"
 )
 
 // fakeTransport records what Deploy does without touching a real host.
