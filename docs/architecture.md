@@ -65,7 +65,7 @@ would produce. This is the project's core guarantee (HR4):
 > `md5(` what `go-teleport-self.arm64` produces when deploying to a riscv64 machine `)`
 
 It is proven three ways: a Go unit test over all 25 host→target pairs
-(`internal/fatblob`), an executed test on real binaries under QEMU user-mode
+(`fatblob`), an executed test on real binaries under QEMU user-mode
 (`test/exec_qemu_user_test.py`), and the reproducible-build check
 (`test/determinism_test.py`).
 
@@ -86,9 +86,9 @@ See the research document for the confirmed references behind each rejection.
 
 | Package / file | Responsibility |
 |----------------|----------------|
-| `internal/fatblob` | The container format: encode/decode, self-image split, reconstruct. Pure, heavily unit-tested. |
-| `internal/archdetect` | Single source of truth for arches: ids, GOARCH/GOARM, ELF `e_machine`, `uname -m` mapping. |
-| `internal/teleport` | SSH install: detect remote arch, reconstruct, upload, verify md5. Transport is an interface (fake in tests, `ssh` in production). |
+| `fatblob` | The container format: encode/decode, self-image split, reconstruct. Pure, heavily unit-tested. |
+| `archdetect` | Single source of truth for arches: ids, GOARCH/GOARM, ELF `e_machine`, `uname -m` mapping. |
+| `teleport` | SSH install: detect remote arch, reconstruct, upload, verify md5. Transport is an interface (fake in tests, `ssh` in production). |
 | `cmd/go-teleport-self` | The shipped program: `info`/`list`/`verify`/`extract` and the `user@host` teleport action. |
 | `cmd/fatpack` | Build-time assembler: bare natives → canonical artifacts + manifest. |
 | `build.py` | Reproducible multi-arch build orchestrator. |

@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/mithro/go-multi-binary/internal/fatblob"
+	"github.com/mithro/go-multi-binary/fatblob"
 )
 
 // syntheticCanonical builds a canonical image for "amd64" with 5 present arches

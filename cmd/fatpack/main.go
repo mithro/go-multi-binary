@@ -22,8 +22,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mithro/go-multi-binary/internal/archdetect"
-	"github.com/mithro/go-multi-binary/internal/fatblob"
+	"github.com/mithro/go-multi-binary/archdetect"
+	"github.com/mithro/go-multi-binary/fatblob"
 )
 
 // ArtifactInfo describes one emitted canonical file (or a reserved slot).
