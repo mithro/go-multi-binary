@@ -75,7 +75,7 @@ and, carrying the same blob, it can teleport onward to yet another architecture.
 ## Live demo (verified)
 
 A real run under QEMU **system** emulation: an **arm64** host binary teleporting
-onto a full **amd64** Debian guest over SSH (`test/teleport_e2e_test.py`).
+onto a full **amd64** Debian guest over SSH (`emulation/system/teleport_e2e_test.go`).
 
 ```
 $ go-teleport-self tester@127.0.0.1 -- -p <port> -i <key> ...

@@ -53,7 +53,7 @@ It is the core guarantee, so it is verified at three levels of realism:
 
 1. **Synthetic, in-process** (`fatblob`): fast, exhaustive over all
    host→target pairs, proves the algorithm.
-2. **Real binaries, executed under emulation** (`test/exec_qemu_user_test.py`):
+2. **Real binaries, executed under emulation** (`emulation/user/exec_qemu_user_test.go`):
    proves the actual compiled tool does it, on every emulated CPU.
-3. **Reproducible-build identity** (`test/determinism_test.py`): proves the bytes
+3. **Reproducible-build identity** (`internal/fatbuild/reprobuild_test.go`): proves the bytes
    a build machine emits equal the bytes a running binary reconstructs.
