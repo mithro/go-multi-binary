@@ -7,6 +7,7 @@
 
 # Local scratch / proof-of-concept (never committed)
 /tmp/
+/.worktrees/
 
 # QEMU disk images and rootfs (large, regenerable)
 /emulation/images/

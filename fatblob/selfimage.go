@@ -1,12 +1,18 @@
 package fatblob
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 )
+
+// elfMagic is the 4-byte prefix of every ELF file. A reconstructed native must
+// begin with it; the check catches a corrupt/mis-decoded slice before it is
+// glued behind the shared blob.
+var elfMagic = []byte{0x7f, 'E', 'L', 'F'}
 
 // A "canonical image" is the distributed artifact for one architecture:
 //
@@ -67,7 +73,17 @@ func Reconstruct(image []byte, target string) ([]byte, error) {
 		if s.Status != StatusPresent || len(s.Data) == 0 {
 			return nil, fmt.Errorf("fatblob: target arch %q is reserved/empty in this image", target)
 		}
-		return BuildCanonical(s.Data, blob)
+		// The stored Data may be compressed; recover the raw native. The blob
+		// itself is passed through UNCHANGED (still compressed) so Encode(blob)
+		// reproduces the exact trailing bytes shared by every canonical(*).
+		native, err := Decompress(s.Codec, s.Data, s.RawLen)
+		if err != nil {
+			return nil, fmt.Errorf("fatblob: target arch %q: %w", target, err)
+		}
+		if !bytes.HasPrefix(native, elfMagic) {
+			return nil, fmt.Errorf("fatblob: target arch %q: reconstructed native is not an ELF", target)
+		}
+		return BuildCanonical(native, blob)
 	}
 	return nil, fmt.Errorf("fatblob: target arch %q not present in image", target)
 }
