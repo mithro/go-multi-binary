@@ -1,5 +1,6 @@
 # go-multi-binary — developer entrypoints.
-# Heavy logic lives in build.py and the Go/pytest tests; these are thin wrappers.
+# Everything is Go: the build orchestrator is cmd/fatbuild, the tests are Go
+# tests (some behind build tags). These targets are thin wrappers; no Python.
 
 .PHONY: all build test unit determinism qemu-user e2e clean fmt vet
 
@@ -7,7 +8,7 @@ all: build
 
 ## build: reproducible multi-arch build -> dist/
 build:
-	uv run python build.py
+	go run ./cmd/fatbuild
 
 ## test: everything that runs without special privileges
 test: unit determinism
@@ -18,16 +19,17 @@ unit:
 	go test ./...
 
 ## determinism: build twice, prove byte-identical + reconstruct law (real binaries)
+## Limit the arch set to go faster, e.g. FATBUILD_TEST_ARCHES=amd64,arm64
 determinism:
-	uv run --with pytest python -m pytest test/determinism_test.py -v
+	go test -tags reprobuild -run TestReproducibleBuilds -v ./internal/fatbuild/
 
-## qemu-user: run each arch's canonical under QEMU user-mode (needs binfmt/qemu-user)
+## qemu-user: run each arch's canonical under QEMU user-mode (needs qemu-user)
 qemu-user:
-	uv run --with pytest python -m pytest test/exec_qemu_user_test.py -v
+	go test -tags qemu -v ./emulation/user/
 
 ## e2e: full SSH teleport demo under system emulation (see emulation/system/)
 e2e:
-	uv run --with pytest python -m pytest test/teleport_e2e_test.py -v
+	go test -tags e2e -v ./emulation/system/
 
 ## clean: remove build outputs
 clean:

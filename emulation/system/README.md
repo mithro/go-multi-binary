@@ -66,7 +66,7 @@ curl -fsSL -o emulation/system/images/debian-12-amd64.qcow2 \
 Then:
 
 ```bash
-make e2e          # or: uv run --with pytest python -m pytest test/teleport_e2e_test.py -v -s
+make e2e          # or: go test -tags e2e ./emulation/system/
 ```
 
 Images and overlays are git-ignored. The test **skips with a clear reason** when

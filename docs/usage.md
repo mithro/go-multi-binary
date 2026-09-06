@@ -3,7 +3,7 @@
 ## Build
 
 ```bash
-make build        # or: uv run python build.py
+make build        # or: go run ./cmd/fatbuild
 ```
 
 This produces, under `dist/`:
