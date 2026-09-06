@@ -1,13 +1,14 @@
-package main
+package fatbuild
 
 import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/mithro/go-multi-binary/fatblob"
 )
 
 func writeFile(t *testing.T, path string, data []byte) {
@@ -29,7 +30,7 @@ func TestAssembleSharesIdenticalBlob(t *testing.T) {
 	writeFile(t, filepath.Join(inDir, "native.amd64"), []byte("\x7fELF-amd64-longer-body"))
 
 	manifest := filepath.Join(outDir, "MANIFEST.json")
-	if err := assemble(inDir, outDir, manifest); err != nil {
+	if _, err := Assemble(inDir, outDir, manifest); err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
 
@@ -42,43 +43,31 @@ func TestAssembleSharesIdenticalBlob(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The trailing blob must be byte-identical across arches (they differ only
-	// in the leading native prefix). Compare the shared suffix.
-	minLen := len(c386)
-	if len(cAmd) < minLen {
-		minLen = len(cAmd)
-	}
-	// Find the blob by locating the shared trailer: the blobs are equal, so the
-	// last K bytes of both must match for K = min blob length. Simplest robust
-	// check: reconstruct 386 from amd64 image and compare to the written 386.
-	got, err := reconstructForTest(cAmd, "386")
+	// in the leading native prefix). Reconstruct 386 from the amd64 image and
+	// compare to the independently written canonical(386).
+	got, err := fatblob.Reconstruct(cAmd, "386")
 	if err != nil {
 		t.Fatalf("reconstruct 386 from amd64: %v", err)
 	}
 	if !bytes.Equal(got, c386) {
 		t.Fatalf("reconstruct(amd64->386) != written canonical(386)")
 	}
-	_ = minLen
 }
 
 func TestAssembleManifestSHAMatches(t *testing.T) {
 	dir := t.TempDir()
 	inDir := filepath.Join(dir, "native")
 	outDir := filepath.Join(dir, "out")
-	os.MkdirAll(inDir, 0o755)
+	if err := os.MkdirAll(inDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	writeFile(t, filepath.Join(inDir, "native.amd64"), []byte("\x7fELF-amd64-body"))
 	writeFile(t, filepath.Join(inDir, "native.arm64"), []byte("\x7fELF-arm64-body"))
 
 	manifestPath := filepath.Join(outDir, "MANIFEST.json")
-	if err := assemble(inDir, outDir, manifestPath); err != nil {
-		t.Fatalf("assemble: %v", err)
-	}
-	raw, err := os.ReadFile(manifestPath)
+	m, err := Assemble(inDir, outDir, manifestPath)
 	if err != nil {
-		t.Fatal(err)
-	}
-	var m Manifest
-	if err := json.Unmarshal(raw, &m); err != nil {
-		t.Fatalf("manifest json: %v", err)
+		t.Fatalf("assemble: %v", err)
 	}
 	for _, a := range m.Artifacts {
 		if !a.Present {
