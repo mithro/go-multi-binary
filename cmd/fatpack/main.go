@@ -88,7 +88,15 @@ func assemble(inDir, outDir, manifestPath string) error {
 		slices = append(slices, fatblob.Slice{Arch: arch, Status: fatblob.StatusPresent, Data: data})
 	}
 
-	blob := fatblob.Blob{Slices: slices}
+	// Compress every present slice ONCE. The resulting blob is the identical
+	// trailer appended to every canonical(*); each canonical's head stays the
+	// raw, kernel-loadable native (taken from `slices` below), so the images
+	// differ only in that uncompressed head.
+	rawBlob := fatblob.Blob{Slices: slices}
+	blob, err := fatblob.CompressBlob(rawBlob)
+	if err != nil {
+		return err
+	}
 	blobBytes, err := fatblob.Encode(blob)
 	if err != nil {
 		return err
