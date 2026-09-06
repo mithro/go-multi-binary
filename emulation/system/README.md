@@ -27,7 +27,7 @@ QEMU 11.1, and `qemu-user` binfmt registered for all target arches.
 |--------|---------|-------|
 | **Docker + qemu-user-static** | ❌ rejected | Docker daemon socket permission denied (user not in `docker` group); not usable without elevating the account. |
 | **QEMU user-mode** | ✅ used for the CI matrix | Every arch's binary runs and reads its own blob; proves the reconstruct law for all 25 host→target pairs. Not an SSH endpoint, so not the *install-onto-a-machine* demo. |
-| **QEMU system, arm64 (KVM)** | ✅ works, but same-arch | Fast via KVM, but arm64 == host, so it doesn't show a *cross-architecture* install. Kept as an option in `qemu_system.py`. |
+| **QEMU system, arm64 (KVM)** | ✅ works, but same-arch | Fast via KVM, but arm64 == host, so it doesn't show a *cross-architecture* install. Kept as an option in `qemusystem.go`. |
 | **QEMU system, amd64 (TCG)** | ✅ **chosen for the live cross-arch demo** | x86_64 under TCG on an arm64 host: mature emulation, stock Debian cloud image, cloud-init SSH. Cross-arch (amd64 ≠ arm64) and reliable. |
 | **QEMU system, riscv64 (TCG)** | ⚠️ optional | Config present; needs `qemu-system-misc` + a riscv64 cloud image. Slowest; enable when you want RISC-V system coverage. |
 
@@ -36,7 +36,7 @@ by the all-arch reconstruct proof in `emulation/user/`.
 
 ## How it works
 
-`qemu_system.py` provides a `guest(arch, workdir)` context manager that:
+`qemusystem.go` provides `Start(ctx, arch, workdir, bootTimeout)` returning a `*Guest` (call `Stop` to shut it down) that:
 
 1. generates a throwaway SSH keypair,
 2. builds a cloud-init seed (`cloud-localds`) creating a passwordless `tester`
@@ -47,7 +47,7 @@ by the all-arch reconstruct proof in `emulation/user/`.
 5. waits until SSH answers, then yields `{host, port, user, key, ssh_args}`,
 6. tears the guest down on exit.
 
-`test/teleport_e2e_test.py` uses it to run the real tool:
+`emulation/system/teleport_e2e_test.go` (build tag `e2e`) uses it to run the real tool:
 `go-teleport-self tester@127.0.0.1 -- <ssh args>`, then SSHes in to run the
 freshly installed guest-native binary and checks it reports the target arch with
 a matching md5.
@@ -66,7 +66,7 @@ curl -fsSL -o emulation/system/images/debian-12-amd64.qcow2 \
 Then:
 
 ```bash
-make e2e          # or: uv run --with pytest python -m pytest test/teleport_e2e_test.py -v -s
+make e2e          # or: go test -tags e2e ./emulation/system/
 ```
 
 Images and overlays are git-ignored. The test **skips with a clear reason** when

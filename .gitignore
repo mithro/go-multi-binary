@@ -20,11 +20,6 @@
 *.out
 /vendor/
 
-# Python
-__pycache__/
-*.pyc
-.pytest_cache/
-
 # Editor
 *.swp
 .DS_Store

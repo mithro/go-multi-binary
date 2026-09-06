@@ -34,11 +34,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - uses: astral-sh/setup-uv@v5
       - name: Build all architectures
-        run: uv run python build.py
-      - name: Byte-identical builds + executed reconstruct law
-        run: uv run --with pytest python -m pytest test/determinism_test.py -v
+        run: go run ./cmd/fatbuild
+      - name: Byte-identical builds + reconstruct law (real binaries)
+        run: go test -tags reprobuild -run TestReproducibleBuilds -v ./internal/fatbuild/
       - name: Upload artifacts + manifest
         uses: actions/upload-artifact@v4
         with:
@@ -57,13 +56,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - uses: astral-sh/setup-uv@v5
       - name: Install QEMU user-mode emulators + binfmt
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-user-static binfmt-support
       - name: Run each arch under emulation + reconstruct law
-        run: uv run --with pytest python -m pytest test/exec_qemu_user_test.py -v
+        run: go test -tags qemu -v ./emulation/user/
 
   e2e-system:
     name: End-to-end SSH teleport (QEMU system, best-effort)
@@ -78,7 +76,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - uses: astral-sh/setup-uv@v5
       - name: Install QEMU system + cloud tools
         run: |
           sudo apt-get update
@@ -92,4 +89,4 @@ jobs:
         env:
           TELEPORT_E2E_ARCH: arm64          # arm64 guest is foreign on an amd64 runner
           TELEPORT_E2E_BOOT_TIMEOUT: '1800' # arm64 under TCG boots slowly; fail-fast on qemu crash
-        run: uv run --with pytest python -m pytest test/teleport_e2e_test.py -v -s
+        run: go test -tags e2e -v ./emulation/system/

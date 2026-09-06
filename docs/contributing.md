@@ -14,7 +14,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=<arch> [GOARM=6] \
   and libc paths, breaking both reproducibility and glibc/musl portability.
 - **Pin the Go toolchain.** The compiler version is an input to the output bytes;
   `.github/workflows/ci.yml` sets `GO_VERSION`. Changing it changes every md5.
-- **Keep the version string an explicit input.** `build.py` injects
+- **Keep the version string an explicit input.** `cmd/fatbuild` injects
   `main.version` (default: `git describe`); the same input on any machine yields
   the same bytes.
 - `SOURCE_DATE_EPOCH` is irrelevant — Go embeds no build timestamp.
@@ -38,9 +38,10 @@ is dropped in. Do **not** mark it supported until a real slice can be produced.
    `e_machine`, `uname -m` aliases, `Supported: true`) **and** to
    `fatblob.FixedArchOrder()` — the order is part of the canonical format, so
    append; do not reorder existing arches.
-2. Add the `(id, GOARCH, GOARM)` tuple to `SUPPORTED` in `build.py`.
-3. Add the arch to the `PRESENT_ARCHES` lists in the tests and to
-   `emulation/user/run.py`'s interpreter map.
+2. No separate build list to update — `cmd/fatbuild` builds every
+   `archdetect.Table()` entry with `Supported: true`.
+3. Add the arch to the `presentArches` lists in the Go tests and to
+   `emulation/user/qemuuser.go`'s `qemuInterp` map.
 4. Run `make unit determinism qemu-user`.
 
 Reordering or changing the format constants (`Magic`, index layout, trailer)
@@ -49,8 +50,10 @@ artifacts — treat the format as append-only and versioned by `Magic`.
 
 ## Conventions
 
-- **Python for orchestration** (loops, subprocess) via `uv run`; **Go** for the
-  binary-format logic (unit-tested).
+- **Go for everything**: the build orchestrator (`cmd/fatbuild`), the emulation
+  harnesses (`emulation/user`, `emulation/system`), and the binary-format logic
+  are all Go, unit-tested. There is no scripting-language runtime dependency and
+  no external test-runner wiring — the Go toolchain is the only requirement.
 - Temp files go in project-local `./tmp/` (git-ignored), never `/tmp`.
 - Small, discrete commits; each ends with tests passing.
 - ISO 8601 or day-first dates only.
