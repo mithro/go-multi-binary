@@ -3,20 +3,33 @@
 //
 // Layout of an encoded blob (all integers little-endian):
 //
-//	magic        8 bytes   "FATBLOB\x01"
+//	magic        8 bytes   "FATBLOB\x02"
 //	count        u16       number of index entries
-//	index        count * 32-byte entries, each:
+//	index        count * 40-byte entries, each:
 //	                 name    8 bytes  arch id, NUL-padded (error if > 8 bytes)
 //	                 status  u8       0 = present, 1 = reserved/empty
-//	                 _rsvd   7 bytes  zero (alignment / future use)
+//	                 codec   u8       0 = stored/none, 1 = xz (LZMA2)
+//	                 _rsvd   6 bytes  zero (alignment / future use)
 //	                 offset  u64      byte offset of payload within the payload region
-//	                 length  u64      payload length
+//	                 length  u64      stored (possibly compressed) payload length
+//	                 rawLen  u64      uncompressed payload length (0 when codec=none)
 //	payload      concatenation of every slice's Data, in index order
 //	trailer      u64 totalLen (whole blob length) + "FATBLOBZ" (8 bytes)
 //
-// The fixed-size trailer lets a running program locate the appended blob from
-// EOF without knowing the size of the ELF it is glued behind. Encoding is fully
-// deterministic: identical Blob input always yields identical bytes.
+// Slice.Data is treated as OPAQUE bytes by Encode/Decode: when a slice is
+// compressed, Data holds the compressed stream and Codec/RawLen describe how to
+// recover it (see codec.go). The fixed-size trailer lets a running program
+// locate the appended blob from EOF without knowing the size of the ELF it is
+// glued behind. Encoding is fully deterministic: identical Blob input always
+// yields identical bytes.
+//
+// Format history:
+//
+//	\x01  original, uncompressed only, 32-byte index entries (no codec/rawLen).
+//	\x02  adds per-slice Codec + RawLen in a 40-byte index entry. There are no
+//	      \x01 releases carrying compressed data in the wild; \x02 code refuses
+//	      to parse a \x01 blob (and vice-versa) rather than silently mis-reading
+//	      the wider index entries.
 package fatblob
 
 import (
@@ -25,8 +38,12 @@ import (
 	"fmt"
 )
 
-// Magic is the 8-byte prefix of every encoded blob.
-const Magic = "FATBLOB\x01"
+// Magic is the 8-byte prefix of every encoded blob (current format version).
+const Magic = "FATBLOB\x02"
+
+// MagicV1 is the prefix of the retired, uncompressed-only format. It is
+// recognised only so Decode can report a clear version mismatch.
+const MagicV1 = "FATBLOB\x01"
 
 // TrailerMagic is the 8-byte suffix of every encoded blob.
 const TrailerMagic = "FATBLOBZ"
@@ -36,7 +53,7 @@ const TrailerLen = 16
 
 const (
 	magicLen      = 8
-	indexEntryLen = 32 // name[8] + status[1] + rsvd[7] + offset[8] + length[8]
+	indexEntryLen = 40 // name[8]+status[1]+codec[1]+rsvd[6]+offset[8]+length[8]+rawLen[8]
 )
 
 // Slice status values.
@@ -45,10 +62,22 @@ const (
 	StatusReserved uint8 = 1 // reserved placeholder (e.g. riscv32); Data is empty
 )
 
-// Slice is one architecture's entry in the container.
+// Codec identifies how a slice's stored Data must be decoded to recover the raw
+// native ELF. See codec.go for compression/decompression.
+const (
+	CodecNone uint8 = 0 // Data is the raw native, stored verbatim
+	CodecXZ   uint8 = 1 // Data is an xz (LZMA2) stream; RawLen is the native size
+)
+
+// Slice is one architecture's entry in the container. For a present slice, Data
+// holds the stored (possibly compressed) bytes, Codec says how they were
+// encoded, and RawLen is the uncompressed native length. For CodecNone, Data is
+// the native itself and RawLen is ignored (it may be 0).
 type Slice struct {
 	Arch   string
 	Status uint8
+	Codec  uint8
+	RawLen uint64
 	Data   []byte
 }
 
@@ -70,6 +99,9 @@ func Encode(b Blob) ([]byte, error) {
 		if len(s.Arch) > 8 {
 			return nil, fmt.Errorf("fatblob: arch id %q exceeds 8 bytes", s.Arch)
 		}
+		if s.Codec != CodecNone && s.Codec != CodecXZ {
+			return nil, fmt.Errorf("fatblob: slice %q unknown codec %d", s.Arch, s.Codec)
+		}
 		payloadLen += len(s.Data)
 	}
 	total := magicLen + 2 + count*indexEntryLen + payloadLen + TrailerLen
@@ -85,9 +117,11 @@ func Encode(b Blob) ([]byte, error) {
 		copy(name[:], s.Arch)
 		out = append(out, name[:]...)
 		out = append(out, s.Status)
-		out = append(out, make([]byte, 7)...) // reserved
+		out = append(out, s.Codec)
+		out = append(out, make([]byte, 6)...) // reserved
 		out = binary.LittleEndian.AppendUint64(out, offset)
 		out = binary.LittleEndian.AppendUint64(out, uint64(len(s.Data)))
+		out = binary.LittleEndian.AppendUint64(out, s.RawLen)
 		offset += uint64(len(s.Data))
 	}
 
@@ -113,6 +147,9 @@ func Decode(data []byte) (Blob, error) {
 		return Blob{}, errors.New("fatblob: data too short")
 	}
 	if string(data[:magicLen]) != Magic {
+		if string(data[:magicLen]) == MagicV1 {
+			return Blob{}, errors.New("fatblob: unsupported format version \\x01 (this build reads \\x02); rebuild the blob")
+		}
 		return Blob{}, errors.New("fatblob: bad magic")
 	}
 	if string(data[len(data)-magicLen:]) != TrailerMagic {
@@ -136,8 +173,10 @@ func Decode(data []byte) (Blob, error) {
 		e := data[indexStart+i*indexEntryLen : indexStart+(i+1)*indexEntryLen]
 		arch := trimNul(e[0:8])
 		status := e[8]
+		codec := e[9]
 		offset := binary.LittleEndian.Uint64(e[16:24])
 		length := binary.LittleEndian.Uint64(e[24:32])
+		rawLen := binary.LittleEndian.Uint64(e[32:40])
 
 		start := payloadStart + int(offset)
 		end := start + int(length)
@@ -148,7 +187,7 @@ func Decode(data []byte) (Blob, error) {
 		if length > 0 {
 			payload = append([]byte(nil), data[start:end]...)
 		}
-		slices = append(slices, Slice{Arch: arch, Status: status, Data: payload})
+		slices = append(slices, Slice{Arch: arch, Status: status, Codec: codec, RawLen: rawLen, Data: payload})
 	}
 	return Blob{Slices: slices}, nil
 }
